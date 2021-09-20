@@ -20,20 +20,20 @@ const weapons = {
 
 const playerProperties = {
   stats: {
-    ac: 17,
+    ac: 18,
     dexBonus: 3,
-    attackBonus: 6,
-    damageBonus: 4
+    attackBonus: 5,
+    damageBonus: 3
   },
   weapon: weapons.longSword
 }
 
 const goblinProperties = {
   stats: {
-    ac: 13,
+    ac: 15,
     dexBonus: 4,
-    attackBonus: 20,
-    damageBonus: 3
+    attackBonus: 4,
+    damageBonus: 2
   },
   weapon: weapons.shortSword
 }
@@ -133,7 +133,7 @@ k.scene('battle', () => {
     sprite("hero", { anim: "idle" }),
     area(),
     color(),
-    health(34),
+    health(12),
     battler(),
     z(2),
     'player',
@@ -145,7 +145,7 @@ k.scene('battle', () => {
     pos(map.getPos(4, 4)),
     sprite("ogre", { anim: "idle" }),
     area(),
-    health(21),
+    health(7),
     battler(),
     'enemy',
     goblinProperties
