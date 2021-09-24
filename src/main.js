@@ -1,5 +1,7 @@
 import kaboom from 'kaboom';
 import dungeonSprites from './dungeon.json';
+import once from 'lodash.once';
+import remove from 'lodash.remove';
 
 const k = kaboom({
   clearColor: [0, 0, 0],
@@ -10,18 +12,25 @@ const k = kaboom({
 k.loadSpriteAtlas('sprites/dungeon.png', dungeonSprites);
 
 const weapons = {
-  shortSword: {
-    baseDamage: Math.ceil(rand(1, 6))
+  dagger: {
+    damage: {
+      min: 1,
+      max: 4
+    }
   },
   longSword: {
-    baseDamage: Math.ceil(rand(1, 8))
+    damage: {
+      min: 1,
+      max: 8
+    }
   }
 }
 
 const playerProperties = {
   stats: {
-    ac: 18,
-    dexBonus: 3,
+    ac: 17,
+    hp: 12,
+    dexBonus: 4,
     attackBonus: 5,
     damageBonus: 3
   },
@@ -30,12 +39,13 @@ const playerProperties = {
 
 const goblinProperties = {
   stats: {
-    ac: 15,
-    dexBonus: 4,
-    attackBonus: 4,
-    damageBonus: 2
+    ac: 13,
+    hp: 7,
+    dexBonus: 3,
+    attackBonus: 3,
+    damageBonus: 1
   },
-  weapon: weapons.shortSword
+  weapon: weapons.dagger
 }
 
 function battler() {
@@ -47,43 +57,26 @@ function battler() {
     id: 'battler',
     require: ['color', 'pos', 'health'],
     statusText: statusText,
+    isActive: false,
     add() {
-      statusText.text = `HP:${this.hp()}`;
+      statusText.text = `HP:${this.stats.hp}/${this.hp()}`;
       statusText.pos = { x: this.pos.x + 2, y: this.pos.y + 36 };
     },
-    attack(target) {
-      const attackRoll = Math.ceil(rand(1, 20) + this.stats.attackBonus);
-      const knife = k.add([
-        pos(),
-        sprite('knife'),
-        follow(this, 0),
-        rotate(90),
-        z(1),
-      ]);
+    async attack(target) {
+      this.trigger('attackStart', this);
 
-      if (this.is('enemy')) {
-        knife.flipY(true);
-        knife.follow = { obj: this, offset: vec2(this.width - knife.width * 2 + 2, this.height / 2) };
-      } else {
-        knife.follow = { obj: this, offset: vec2(this.width + knife.width, this.height / 2) };
-      }
+      const attackRoll = Math.ceil(rand(1, 20) + this.stats.attackBonus);
 
       if (attackRoll >= target.stats.ac) {
-        target.color = rgb(255, 0, 0);
-        const damageRoll = Math.ceil(rand(1, 6) + this.stats.damageBonus);
+        const damageRoll = Math.ceil(rand(this.weapon.damage.min, this.weapon.damage.max) + this.stats.damageBonus);
+        target.hurt(damageRoll);
         const hitText = add([
           pos(),
           origin('center'),
           follow(target, vec2(target.width / 2, -2)),
-          text(`Hit for: ${damageRoll}!`, { size: 6 })
+          text(damageRoll, { size: 6 })
         ]);
-        const attackAnimation = wait(1, () => {
-          target.hurt(damageRoll);
-          this.trigger('takeDamage', target, knife, hitText)
-        });
-        attackAnimation.then(() => {
-          this.trigger('turnEnd', this);
-        });
+        this.trigger('dealDamage', target, hitText)
       } else {
         const missText = add([
           pos(),
@@ -91,14 +84,9 @@ function battler() {
           follow(target, vec2(target.width / 2, -2)),
           text('Miss!', { size: 8 })
         ]);
-        const attackAnimation = wait(1, () => {
-          knife.destroy();
-          missText.destroy();
-          target.color = null;
-        })
-        attackAnimation.then(() => {
-          this.trigger('turnEnd', this);
-        });
+        await wait(1);
+        missText.destroy();
+        target.color = null;
       }
     }
   }
@@ -129,84 +117,112 @@ k.scene('battle', () => {
   });
 
   const player = k.add([
-    pos(map.getPos(2, 4)),
+    pos(map.getPos(1, 5 * 1.1)),
     sprite("hero", { anim: "idle" }),
     area(),
     color(),
-    health(12),
+    health(playerProperties.stats.hp),
     battler(),
     z(2),
     'player',
-    playerProperties
+    { ...playerProperties, initiative: Math.ceil(rand(1, 20) + playerProperties.stats.dexBonus) }
   ]);
 
-  const goblin = k.add([
-    color(),
-    pos(map.getPos(4, 4)),
-    sprite("ogre", { anim: "idle" }),
-    area(),
-    health(7),
-    battler(),
-    'enemy',
-    goblinProperties
-  ]);
+  let goblins = [];
+
+  for (let i = 0; i <= 2; i++) {
+    goblins.push(k.add([
+      color(),
+      pos(map.getPos(5, 1 + i * 4.5)),
+      sprite("ogre", { anim: "idle" }),
+      area(),
+      health(goblinProperties.stats.hp),
+      battler(),
+      'enemy',
+      { ...goblinProperties, initiative: Math.ceil(rand(1, 20)) + goblinProperties.stats.dexBonus }
+    ]))
+    goblins[i].flipX(true);
+  }
+
+  const goblin = goblins[0];
 
   goblin.flipX(true);
 
-  const initialAttack = wait(2);
+  const battlers = [player, ...goblins];
 
-  initialAttack.then(() => {
-    player.attack(goblin)
-  });
+  const sortedBattlers = battlers.sort((a, b) => a.initiative < b.initiative);
+  console.log(sortedBattlers);
 
-  player.on('turnEnd', () => {
-    if (goblin.exists()) {
-      const goblinAttack = wait(2);
-      goblinAttack.then(() => {
-        goblin.attack(player);
-      })
-    }
-  });
-
-  goblin.on('turnEnd', () => {
-    if (player.exists()) {
-      const playerAttack = wait(2);
-      playerAttack.then(() => {
-        player.attack(goblin);
-      })
-    }
-  });
-
-  // TODO: Remove. Lots of code duplication.
-  player.on('takeDamage', (target, knife, hitText) => {
-    knife.destroy();
-    hitText.destroy();
+  async function dealDamage(target, hitText) {
     if (target.hp() <= 0) {
       target.statusText.destroy();
+      addKaboom({ x: target.pos.x + target.width / 2, y: target.pos.y + target.height / 2 });
+      hitText.destroy();
+      target.destroy();
+      remove(sortedBattlers, {
+        _id: target._id
+      })
     }
-    target.statusText.text = `HP:${target.hp()}`;
+    target.color = rgb(255, 0, 0);
+    target.statusText.text = `HP:${target.hp()}/${target.stats.hp}`;
+    await wait(1);
     target.color = null;
-  });
-
-  goblin.on('takeDamage', (target, knife, hitText) => {
-    knife.destroy();
     hitText.destroy();
-    if (target.hp() <= 0) {
-      target.statusText.destroy();
+  }
+
+  async function attackLoop() {
+    sortedBattlers[0].color = rgb(0, 150, 100);
+    sortedBattlers[0].on('attackStart', async (obj) => {
+      let knifePosX = obj.pos.x + obj.width * 1.75;
+      let knifePosY = obj.pos.y + obj.height / 2
+      if (obj.is('enemy')) {
+        knifePosX = obj.pos.x + obj.width - 22;
+      }
+      const knife = k.add([
+        pos(knifePosX, knifePosY),
+        sprite('knife', {
+          flipY: obj.is('enemy') ? true : false,
+        }),
+        rotate(90),
+        z(1),
+      ]);
+      await wait(1);
+      knife.destroy();
+    });
+    sortedBattlers[0].on('dealDamage', (target, hitText) => {
+      dealDamage(target, hitText);
+    });
+    // Player is attacking
+    if (sortedBattlers[0].is('player')) {
+      async function clickEnemy(obj) {
+        sortedBattlers[0].attack(obj);
+        await wait(1);
+        sortedBattlers[0].color = null;
+        sortedBattlers.push(sortedBattlers.shift());
+        attackLoop();
+      };
+
+      const clickEnemyOnce = once(clickEnemy);
+      clicks('enemy', async (obj) => {
+        clickEnemyOnce(obj);
+      })
     }
-    target.statusText.text = `HP:${target.hp()}`;
-    target.color = null;
-  });
 
-  player.on('death', () => {
-    addKaboom(player.pos);
-    player.destroy()
-  })
+    // Enemy is attacking
+    if (sortedBattlers[0].is('enemy') && player.exists()) {
+      await wait(2.5);
+      sortedBattlers[0].attack(player);
+      await wait(1);
+      sortedBattlers[0].color = null;
+      sortedBattlers.push(sortedBattlers.shift());
+      attackLoop();
+    }
+  }
 
-  goblin.on('death', () => {
-    addKaboom(goblin.pos);
-    goblin.destroy()
-  })
+  attackLoop();
+
 });
 
-go('battle');
+ready(() => {
+  go('battle');
+})
