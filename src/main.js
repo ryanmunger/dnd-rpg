@@ -52,15 +52,14 @@ function battler() {
   const statusText = add([
     pos(),
     text('', { size: 6 }),
-  ])
+  ]);
   return {
     id: 'battler',
     require: ['color', 'pos', 'health'],
     statusText: statusText,
-    isActive: false,
     add() {
-      statusText.text = `HP:${this.stats.hp}/${this.hp()}`;
-      statusText.pos = { x: this.pos.x + 2, y: this.pos.y + 36 };
+      this.statusText.text = `${this.stats.hp}/${this.hp()}`
+      this.trigger('addBattler', this);
     },
     async attack(target) {
       this.trigger('attackStart', this);
@@ -128,6 +127,7 @@ k.scene('battle', () => {
     { ...playerProperties, initiative: Math.ceil(rand(1, 20) + playerProperties.stats.dexBonus) }
   ]);
 
+
   let goblins = [];
 
   for (let i = 0; i <= 2; i++) {
@@ -151,7 +151,17 @@ k.scene('battle', () => {
   const battlers = [player, ...goblins];
 
   const sortedBattlers = battlers.sort((a, b) => a.initiative < b.initiative);
-  console.log(sortedBattlers);
+
+  ready(() => {
+    sortedBattlers.forEach((battler) => {
+      battler.statusText.text = `${battler.stats.hp}/${battler.hp()}`;
+      console.log(battler.statusText.width);
+      battler.statusText.pos = {
+        x: (battler.pos.x) - ((battler.statusText.width - battler.width) / 2),
+        y: battler.pos.y + battler.height + 3
+      };
+    })
+  })
 
   async function dealDamage(target, hitText) {
     if (target.hp() <= 0) {
@@ -164,7 +174,7 @@ k.scene('battle', () => {
       })
     }
     target.color = rgb(255, 0, 0);
-    target.statusText.text = `HP:${target.hp()}/${target.stats.hp}`;
+    target.statusText.text = `${target.hp()}/${target.stats.hp}`;
     await wait(1);
     target.color = null;
     hitText.destroy();
@@ -223,6 +233,4 @@ k.scene('battle', () => {
 
 });
 
-ready(() => {
-  go('battle');
-})
+go('battle');
